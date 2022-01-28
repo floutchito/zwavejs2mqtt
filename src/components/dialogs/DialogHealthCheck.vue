@@ -36,13 +36,142 @@
 						</v-col>
 					</v-row>
 
-					<v-row class="mb-2" justify="center">
+					<v-row class="mb-2" justify="space-around">
 						<v-btn
 							color="success"
 							:disabled="loading || !targetNode"
 							@click="checkHealth()"
 							>Check</v-btn
 						>
+						<v-menu
+							:close-on-content-click="false"
+							offset-y
+							bottom
+							open-on-click
+							content-class="help-menu"
+						>
+							<template v-slot:activator="{ on, attrs }">
+								<v-btn color="primary" v-on="on" v-bind="attrs">
+									<v-icon>help</v-icon>
+								</v-btn>
+							</template>
+							<v-list dense>
+								<v-list-item>
+									<v-list-item-content class="ma-0">
+										<v-list-item-title
+											>Route changes</v-list-item-title
+										>
+										<v-list-item-subtitle
+											>How many times at least one new
+											route was needed. Lower = better,
+											ideally 0. Only available if the
+											controller supports TX
+											reports</v-list-item-subtitle
+										>
+									</v-list-item-content>
+								</v-list-item>
+								<v-list-item>
+									<v-list-item-content>
+										<v-list-item-title
+											>Latency</v-list-item-title
+										>
+										<v-list-item-subtitle
+											>The maximum time it took to send a
+											ping to the node. Lower = better,
+											ideally 10 ms. ill use the time in
+											TX reports if available, otherwise
+											fall back to measuring the round
+											trip time.</v-list-item-subtitle
+										>
+									</v-list-item-content>
+								</v-list-item>
+								<v-list-item>
+									<v-list-item-content>
+										<v-list-item-title
+											>No. Neighbors</v-list-item-title
+										>
+										<v-list-item-subtitle
+											>How many routing neighbors this
+											node has. Higher = better, ideally >
+											2</v-list-item-subtitle
+										>
+									</v-list-item-content>
+								</v-list-item>
+								<v-list-item>
+									<v-list-item-content>
+										<v-list-item-title
+											>Failed Pings
+											node</v-list-item-title
+										>
+										<v-list-item-subtitle
+											>How many pings were not ACKed by
+											the node. Lower = better, ideally
+											0.</v-list-item-subtitle
+										>
+									</v-list-item-content>
+								</v-list-item>
+								<v-list-item>
+									<v-list-item-content>
+										<v-list-item-title
+											>Min Power Level</v-list-item-title
+										>
+										<v-list-item-subtitle
+											>The minimum powerlevel where all
+											pings from the (source) node were
+											ACKed by the target node /
+											controller. Lower = better, ideally
+											-6dBm or less. Only available if the
+											(source) node supports Powerlevel
+											CC</v-list-item-subtitle
+										>
+									</v-list-item-content>
+								</v-list-item>
+								<v-list-item>
+									<v-list-item-content>
+										<v-list-item-title
+											>Failed pings
+											Controller</v-list-item-title
+										>
+										<v-list-item-subtitle
+											>If no powerlevel was found where
+											the controller ACKed all pings from
+											the node, this contains the number
+											of pings that weren't ACKed. Lower =
+											better, ideally
+											0.</v-list-item-subtitle
+										>
+									</v-list-item-content>
+								</v-list-item>
+								<v-list-item>
+									<v-list-item-content>
+										<v-list-item-title
+											>SNR Margin</v-list-item-title
+										>
+										<v-list-item-subtitle
+											>An estimation of the
+											Signal-to-Noise Ratio Margin in dBm.
+											Only available if the controller
+											supports TX
+											reports.</v-list-item-subtitle
+										>
+									</v-list-item-content>
+								</v-list-item>
+								<v-list-item>
+									<v-list-item-content>
+										<v-list-item-title
+											>Rating</v-list-item-title
+										>
+									</v-list-item-content>
+								</v-list-item>
+							</v-list>
+							<v-data-table
+								:headers="hintHeaders"
+								:items="hintValues"
+								class="elevation-1"
+								hide-default-footer
+								disable-pagination
+							></v-data-table>
+						</v-menu>
 					</v-row>
 
 					<v-data-table
@@ -52,33 +181,63 @@
 						class="elevation-1"
 						v-if="results.length > 0"
 					>
-						<template v-slot:[`item.rating`]="{ item }">
-							<span
-								:class="
-									'font-weight-bold ' +
-									ratingColor(item.rating)
-								"
-								v-if="item.rating !== undefined"
-								>{{ item.rating }}</span
+						<template v-slot:top>
+							<v-btn
+								text
+								v-if="!loading && resultsTargetNode >= 0"
+								color="primary"
+								@click="exportResults"
+								class="mb-2"
+								>Export</v-btn
 							>
-							<v-progress-circular
-								v-else
-								indeterminate
-							></v-progress-circular>
+						</template>
+						<template v-slot:[`item.rating`]="{ item }">
+							<v-progress-linear
+								rounded
+								height="25"
+								:value="item.rating * 10"
+								:color="getRatingColor(item.rating)"
+								:indeterminate="item.rating === undefined"
+							>
+								<strong v-if="item.rating !== undefined"
+									>{{ item.rating }}/10</strong
+								>
+							</v-progress-linear>
 						</template>
 						<template v-slot:[`item.latency`]="{ item }">
-							<span v-if="item.latency !== undefined"
-								>{{ item.latency }} ms</span
+							<strong
+								:class="getLatencyColor(item.latency)"
+								v-if="item.latency !== undefined"
+								>{{ item.latency }} ms</strong
 							>
 						</template>
 						<template v-slot:[`item.snrMargin`]="{ item }">
-							<span v-if="item.snrMargin !== undefined"
-								>{{ item.snrMargin }} dBm</span
+							<strong
+								:class="getSnrMarginColor(item.snrMargin)"
+								v-if="item.snrMargin !== undefined"
+								>{{ item.snrMargin }} dBm</strong
 							>
 						</template>
-						<template v-slot:[`item.minPowerLevel`]="{ item }">
-							<span v-if="item.minPowerLevel !== undefined"
-								>{{ item.minPowerLevel }} dBm</span
+
+						<template v-slot:[`item.numNeighbors`]="{ item }">
+							<strong
+								:class="getNeighborsColor(item.numNeighbors)"
+								v-if="item.numNeighbors !== undefined"
+								>{{ item.numNeighbors }}</strong
+							>
+						</template>
+
+						<template v-slot:[`item.routeChanges`]="{ item }">
+							<strong v-if="item.routeChanges !== undefined">{{
+								item.routeChanges
+							}}</strong>
+						</template>
+
+						<template v-slot:[`item.minPowerlevel`]="{ item }">
+							<strong
+								:class="getPowerLevelColor(item.minPowerlevel)"
+								v-if="item.minPowerlevel !== undefined"
+								>{{ getPowerLevel(item.minPowerlevel) }}</strong
 							>
 						</template>
 
@@ -87,14 +246,29 @@
 								class="mb-0"
 								v-if="item.failedPingsNode !== undefined"
 							>
-								Node: {{ item.failedPingsNode }}/10
+								{{ resultsTargetNode }} → {{ activeNode.id }}:
+								<strong
+									:class="
+										getFailedPingsColor(
+											item.failedPingsNode
+										)
+									"
+									>{{ item.failedPingsNode }}/10</strong
+								>
 							</p>
 							<p
 								class="mb-0"
 								v-if="item.failedPingsController !== undefined"
 							>
-								Controller:
-								{{ item.failedPingsController }}/10
+								{{ resultsTargetNode }} ← {{ activeNode.id }}:
+								<strong
+									:class="
+										getFailedPingsColor(
+											item.failedPingsController
+										)
+									"
+									>{{ item.failedPingsController }}/10</strong
+								>
 							</p>
 						</template>
 
@@ -105,13 +279,29 @@
 								class="mb-0"
 								v-if="item.failedPingsToSource !== undefined"
 							>
-								Source: {{ item.failedPingsToSource }}/10
+								{{ resultsTargetNode }} → {{ activeNode.id }}:
+								<strong
+									:class="
+										getFailedPingsColor(
+											item.failedPingsToSource
+										)
+									"
+									>{{ item.failedPingsToSource }}/10</strong
+								>
 							</p>
 							<p
 								class="mb-0"
 								v-if="item.failedPingsToTarget !== undefined"
 							>
-								Target: {{ item.failedPingsToTarget }}/10
+								{{ resultsTargetNode }} ← {{ activeNode.id }}:
+								<strong
+									:class="
+										getFailedPingsColor(
+											item.failedPingsToTarget
+										)
+									"
+									>{{ item.failedPingsToTarget }}/10</strong
+								>
 							</p>
 						</template>
 
@@ -122,13 +312,33 @@
 								class="mb-0"
 								v-if="item.minPowerlevelSource !== undefined"
 							>
-								Source: {{ item.minPowerlevelSource }} dBm
+								Node {{ activeNode.id }}:
+								<strong
+									:class="
+										getPowerLevelColor(
+											item.minPowerlevelSource
+										)
+									"
+									>{{
+										getPowerLevel(item.minPowerlevelSource)
+									}}</strong
+								>
 							</p>
 							<p
 								class="mb-0"
 								v-if="item.minPowerlevelTarget !== undefined"
 							>
-								Target: {{ item.minPowerlevelTarget }} dBm
+								Node {{ resultsTargetNode }}:
+								<strong
+									:class="
+										getPowerLevelColor(
+											item.minPowerlevelTarget
+										)
+									"
+									>{{
+										getPowerLevel(item.minPowerlevelTarget)
+									}}</strong
+								>
 							</p>
 						</template>
 					</v-data-table>
@@ -138,12 +348,19 @@
 			<v-card-actions>
 				<v-spacer></v-spacer>
 				<v-btn color="blue darken-1" text @click="$emit('close')"
-					>Cancel</v-btn
+					>Close</v-btn
 				>
 			</v-card-actions>
 		</v-card>
 	</v-dialog>
 </template>
+
+<style>
+.help-menu {
+	max-height: 90vh;
+	overflow: scroll;
+}
+</style>
 
 <script>
 import { socketEvents, inboundEvents } from '@/plugins/socket'
@@ -171,17 +388,23 @@ export default {
 		headers() {
 			if (this.mode === 'Lifeline') {
 				return [
-					{ text: 'Latency', value: 'latency' },
+					{ text: 'Max latency', value: 'latency' },
 					{ text: 'Failed pings', value: 'failedPingsNode' },
 					{ text: 'Route Changes', value: 'routeChanges' },
 					{ text: 'SNR margin', value: 'snrMargin' },
-					{ text: 'Min power level', value: 'minPowerlevel' },
+					{
+						text: 'Min power level w/o errors',
+						value: 'minPowerlevel',
+					},
 					{ text: 'Rating', value: 'rating' },
 				]
 			} else {
 				return [
 					{ text: 'Failed pings', value: 'failedPingsToSource' },
-					{ text: 'Min Power Level', value: 'minPowerlevelSource' },
+					{
+						text: 'Min Power Level w/o errors',
+						value: 'minPowerlevelSource',
+					},
 					{ text: 'Neighbors', value: 'numNeighbors' },
 					{ text: 'Rating', value: 'rating' },
 				]
@@ -196,17 +419,157 @@ export default {
 			rounds: 5,
 			targetNode: null,
 			activeNode: null,
+			resultsTargetNode: null,
 			mode: 'Lifeline',
+			hintHeaders: [
+				{ text: 'Rating', value: 'rating', sortable: false },
+				{ text: 'Failed pings', value: 'failedPings', sortable: false },
+				{ text: 'Max latency', value: 'latency', sortable: false },
+				{
+					text: 'No. of Neighbors',
+					value: 'neighbors',
+					sortable: false,
+				},
+				{ text: 'SNR margin', value: 'snrMargin', sortable: false },
+				{
+					text: 'Min power level w/o errors',
+					value: 'minPowerlevel',
+					sortable: false,
+				},
+			],
+			hintValues: [
+				{
+					rating: 10,
+					failedPings: 0,
+					latency: '≤ 50 ms',
+					neighbors: '> 2',
+					snrMargin: '≥ 17dBm',
+					minPowerlevel: '≤ -6dBm',
+				},
+				{
+					rating: 9,
+					failedPings: 0,
+					latency: '≤ 100 ms',
+					neighbors: '> 2',
+					snrMargin: '≥ 17dBm',
+					minPowerlevel: '≤ -6dBm',
+				},
+				{
+					rating: 8,
+					failedPings: 0,
+					latency: '≤ 100 ms',
+					neighbors: '≤ 2',
+					snrMargin: '≥ 17dBm',
+					minPowerlevel: '≤ -6dBm',
+				},
+				{
+					rating: 7,
+					failedPings: 0,
+					latency: '≤ 100ms',
+					neighbors: '> 2',
+				},
+				{
+					rating: 6,
+					failedPings: 0,
+					latency: '≤ 100ms',
+					neighbors: '≤ 2',
+				},
+				{
+					rating: 5,
+					failedPings: 0,
+					latency: '≤ 250ms',
+				},
+				{
+					rating: 4,
+					failedPings: 0,
+					latency: '≤ 500 ms',
+				},
+				{
+					rating: 3,
+					failedPings: 1,
+					latency: '≤ 1000ms',
+				},
+				{
+					rating: 2,
+					failedPings: '≤ 2',
+					latency: '> 1000ms',
+				},
+				{
+					rating: 1,
+					failedPings: '≤ 9',
+				},
+				{
+					rating: 0,
+					failedPings: 10,
+				},
+			],
 		}
 	},
 	methods: {
-		ratingColor(rating) {
-			if (rating >= 6) {
-				return 'green--text'
-			} else if (rating >= 4) {
-				return 'orange--text'
+		exportResults() {
+			this.$listeners.export(
+				this.results,
+				`healthCheck_${this.activeNode.id}-${this.resultsTargetNode}`,
+				'json'
+			)
+		},
+		getNeighborsColor(value) {
+			if (value > 2) {
+				return 'success--text'
+			} else if (value === 0) {
+				return 'error--text'
 			} else {
-				return 'red--text'
+				return 'warning--text'
+			}
+		},
+		getLatencyColor(value) {
+			if (value <= 100) {
+				return 'success--text'
+			} else if (value <= 500) {
+				return 'warning--text'
+			} else {
+				return 'error--text'
+			}
+		},
+		getSnrMarginColor(value) {
+			if (value >= 17) {
+				return 'success--text'
+			} else {
+				return 'error--text'
+			}
+		},
+		getFailedPingsColor(value) {
+			if (value === 0) {
+				return 'success--text'
+			} else if (value === 1) {
+				return 'warning--text'
+			} else {
+				return 'error--text'
+			}
+		},
+		getRatingColor(rating) {
+			if (rating === undefined) {
+				return 'primary'
+			} else if (rating >= 6) {
+				return 'success'
+			} else if (rating >= 4) {
+				return 'warning'
+			} else {
+				return 'error'
+			}
+		},
+		getPowerLevel(v) {
+			return `-${v} dBm`
+		},
+		getPowerLevelColor(v) {
+			if (v === undefined) {
+				return ''
+			} else if (v >= 6) {
+				return 'success--text'
+			} else if (v >= 3) {
+				return 'warning--text'
+			} else {
+				return 'error--text'
 			}
 		},
 		init(open) {
@@ -238,6 +601,7 @@ export default {
 					const res = data.result
 
 					this.results = res.results
+					this.resultsTargetNode = res.targetNodeId
 				}
 			}
 		},
